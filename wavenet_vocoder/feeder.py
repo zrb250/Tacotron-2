@@ -12,6 +12,10 @@ from sklearn.model_selection import train_test_split
 from .util import is_mulaw_quantize, is_scalar_input
 
 
+#(line 229):fix bug  "Can't convert Operation 'WaveNet_model_1/inference/while/PrintV2' to"
+#do not check division condition when it is test mode
+#https://github.com/Rayhane-mamah/Tacotron-2/blob/18054524a2956244e6108d1e9a49a67d31a27885/wavenet_vocoder/feeder.py
+
 
 _batches_per_group = 64
 
@@ -46,10 +50,10 @@ class Feeder:
 			assert hparams.wavenet_test_batches is not None
 
 		test_size = (hparams.wavenet_test_size if hparams.wavenet_test_size is not None
-			else hparams.wavenet_test_batches * hparams.wavenet_batch_size)
+					 else hparams.wavenet_test_batches * hparams.wavenet_batch_size)
 		indices = np.arange(len(self._metadata))
 		train_indices, test_indices = train_test_split(indices,
-			test_size=test_size, random_state=hparams.wavenet_data_random_state)
+													   test_size=test_size, random_state=hparams.wavenet_data_random_state)
 
 		#Make sure test size is a multiple of batch size else round up
 		len_test_indices = _round_down(len(test_indices), hparams.wavenet_batch_size)
@@ -81,9 +85,9 @@ class Feeder:
 				target_type = tf.int32
 
 			self._placeholders = [
-			input_placeholder,
-			target_placeholder,
-			tf.placeholder(tf.int32, shape=(None, ), name='input_lengths'),
+				input_placeholder,
+				target_placeholder,
+				tf.placeholder(tf.int32, shape=(None, ), name='input_lengths'),
 			]
 
 			queue_types = [tf.float32, target_type, tf.int32]
@@ -226,7 +230,7 @@ class Feeder:
 		test_batches = self.make_test_batches()
 		while not self._coord.should_stop():
 			for batch in test_batches:
-				feed_dict = dict(zip(self._placeholders, self._prepare_batch(batch)))
+				feed_dict = dict(zip(self._placeholders, self._prepare_batch(batch, test_mode=True)))
 				self._session.run(self._eval_enqueue_op, feed_dict=feed_dict)
 
 	def _get_next_example(self):
@@ -263,9 +267,12 @@ class Feeder:
 		return (input_data, local_condition_features, global_condition_features, len(input_data))
 
 
-	def _prepare_batch(self, batches):
-		assert 0 == len(batches) % self._hparams.wavenet_num_gpus
-		size_per_device = int(len(batches) / self._hparams.wavenet_num_gpus)
+	def _prepare_batch(self, batches, test_mode=False):
+		if not test_mode:
+			assert 0 == len(batches) % self._hparams.wavenet_num_gpus
+			size_per_device = int(len(batches) / self._hparams.wavenet_num_gpus)
+		else:
+			size_per_device = len(batches)
 		np.random.shuffle(batches)
 
 		#Limit time steps to save GPU Memory usage
@@ -324,7 +331,7 @@ class Feeder:
 
 			if self._hparams.clip_for_wavenet:
 				c_features = [np.clip(x, T2_output_range[0], T2_output_range[1]) for x in c_features]
-				
+
 			c_batch = np.stack([_pad_inputs(x, maxlen, _pad=T2_output_range[0]) for x in c_features]).astype(np.float32)
 			assert len(c_batch.shape) == 3
 			#[batch_size, c_channels, time_steps]

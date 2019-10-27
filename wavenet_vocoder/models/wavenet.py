@@ -7,20 +7,21 @@ from wavenet_vocoder.util import *
 
 from .gaussian import sample_from_gaussian
 from .mixture import sample_from_discretized_mix_logistic
-from .modules import (Conv1D1x1, ConvTranspose2D, ConvTranspose1D, ResizeConvolution, SubPixelConvolution, NearestNeighborUpsample, DiscretizedMixtureLogisticLoss, 
-	GaussianMaximumLikelihoodEstimation, MaskedMeanSquaredError, LeakyReluActivation, MaskedCrossEntropyLoss, ReluActivation, ResidualConv1DGLU, WeightNorm, Embedding)
+from .modules import (Conv1D1x1, ConvTranspose2D, ConvTranspose1D, ResizeConvolution, SubPixelConvolution, NearestNeighborUpsample, DiscretizedMixtureLogisticLoss,
+					  GaussianMaximumLikelihoodEstimation, MaskedMeanSquaredError, LeakyReluActivation, MaskedCrossEntropyLoss, ReluActivation, ResidualConv1DGLU, WeightNorm, Embedding)
 
+#(line 227):fix bug  "Can't convert Operation 'WaveNet_model_1/inference/while/PrintV2' to"
+#when init eval model, set num_gpus to 1
+#https://github.com/Rayhane-mamah/Tacotron-2/blob/d1f55c8e9b8cd56f32608ff38ce20e56c1b9351b/wavenet_vocoder/models/wavenet.py
 
 def _expand_global_features(batch_size, time_length, global_features, data_format='BCT'):
 	"""Expand global conditioning features to all time steps
-
 	Args:
 		batch_size: int
 		time_length: int
 		global_features: Tensor of shape [batch_size, channels] or [batch_size, channels, 1]
 		data_format: string, 'BCT' to get output of shape [batch_size, channels, time_length]
 			or 'BTC' to get output of shape [batch_size, time_length, channels]
-
 	Returns:
 		None or Tensor of shape [batch_size, channels, time_length] or [batch_size, time_length, channels]
 	"""
@@ -53,14 +54,12 @@ def _expand_global_features(batch_size, time_length, global_features, data_forma
 
 def receptive_field_size(total_layers, num_cycles, kernel_size, dilation=lambda x: 2**x):
 	"""Compute receptive field size.
-
 	Args:
 		total_layers; int
 		num_cycles: int
 		kernel_size: int
 		dilation: callable, function used to compute dilation factor.
 			use "lambda x: 1" to disable dilated convolutions.
-
 	Returns:
 		int: receptive field size in sample.
 	"""
@@ -72,7 +71,6 @@ def receptive_field_size(total_layers, num_cycles, kernel_size, dilation=lambda 
 
 def maybe_Normalize_weights(layer, weight_normalization=True, init=False, init_scale=1.):
 	"""Maybe Wraps layer with Weight Normalization wrapper.
-
 	Args;
 		layer: tf layers instance, the layer candidate for normalization
 		weight_normalization: Boolean, determines whether to normalize the layer
@@ -102,51 +100,51 @@ class WaveNet():
 		#first (embedding) convolution
 		with tf.variable_scope('input_convolution'):
 			if self.scalar_input:
-				self.first_conv = Conv1D1x1(hparams.residual_channels, 
-					weight_normalization=hparams.wavenet_weight_normalization, 
-					weight_normalization_init=init, 
-					weight_normalization_init_scale=hparams.wavenet_init_scale,
-					name='input_convolution')
+				self.first_conv = Conv1D1x1(hparams.residual_channels,
+											weight_normalization=hparams.wavenet_weight_normalization,
+											weight_normalization_init=init,
+											weight_normalization_init_scale=hparams.wavenet_init_scale,
+											name='input_convolution')
 			else:
-				self.first_conv = Conv1D1x1(hparams.residual_channels, 
-					weight_normalization=hparams.wavenet_weight_normalization, 
-					weight_normalization_init=init, 
-					weight_normalization_init_scale=hparams.wavenet_init_scale,
-					name='input_convolution')
+				self.first_conv = Conv1D1x1(hparams.residual_channels,
+											weight_normalization=hparams.wavenet_weight_normalization,
+											weight_normalization_init=init,
+											weight_normalization_init_scale=hparams.wavenet_init_scale,
+											name='input_convolution')
 
 		#Residual Blocks
 		self.residual_layers = []
 		for layer in range(hparams.layers):
 			self.residual_layers.append(ResidualConv1DGLU(
-			hparams.residual_channels, hparams.gate_channels,
-			kernel_size=hparams.kernel_size,
-			skip_out_channels=hparams.skip_out_channels,
-			use_bias=hparams.use_bias,
-			dilation_rate=2**(layer % layers_per_stack),
-			dropout=hparams.wavenet_dropout,
-			cin_channels=hparams.cin_channels,
-			gin_channels=hparams.gin_channels,
-			weight_normalization=hparams.wavenet_weight_normalization, 
-			init=init, 
-			init_scale=hparams.wavenet_init_scale,
-			residual_legacy=hparams.residual_legacy,
-			name='ResidualConv1DGLU_{}'.format(layer)))
+				hparams.residual_channels, hparams.gate_channels,
+				kernel_size=hparams.kernel_size,
+				skip_out_channels=hparams.skip_out_channels,
+				use_bias=hparams.use_bias,
+				dilation_rate=2**(layer % layers_per_stack),
+				dropout=hparams.wavenet_dropout,
+				cin_channels=hparams.cin_channels,
+				gin_channels=hparams.gin_channels,
+				weight_normalization=hparams.wavenet_weight_normalization,
+				init=init,
+				init_scale=hparams.wavenet_init_scale,
+				residual_legacy=hparams.residual_legacy,
+				name='ResidualConv1DGLU_{}'.format(layer)))
 
 		#Final (skip) convolutions
 		with tf.variable_scope('skip_convolutions'):
 			self.last_conv_layers = [
-			ReluActivation(name='final_conv_relu1'),
-			Conv1D1x1(hparams.skip_out_channels, 
-				weight_normalization=hparams.wavenet_weight_normalization, 
-				weight_normalization_init=init, 
-				weight_normalization_init_scale=hparams.wavenet_init_scale,
-				name='final_convolution_1'), 
-			ReluActivation(name='final_conv_relu2'),
-			Conv1D1x1(hparams.out_channels, 
-				weight_normalization=hparams.wavenet_weight_normalization, 
-				weight_normalization_init=init, 
-				weight_normalization_init_scale=hparams.wavenet_init_scale,
-				name='final_convolution_2'),]
+				ReluActivation(name='final_conv_relu1'),
+				Conv1D1x1(hparams.skip_out_channels,
+						  weight_normalization=hparams.wavenet_weight_normalization,
+						  weight_normalization_init=init,
+						  weight_normalization_init_scale=hparams.wavenet_init_scale,
+						  name='final_convolution_1'),
+				ReluActivation(name='final_conv_relu2'),
+				Conv1D1x1(hparams.out_channels,
+						  weight_normalization=hparams.wavenet_weight_normalization,
+						  weight_normalization_init=init,
+						  weight_normalization_init_scale=hparams.wavenet_init_scale,
+						  name='final_convolution_2'),]
 
 		#Global conditionning embedding
 		if hparams.gin_channels > 0 and hparams.use_speaker_embedding:
@@ -172,31 +170,31 @@ class WaveNet():
 					with tf.variable_scope('local_conditioning_upsampling_{}'.format(i+1)):
 						if hparams.upsample_type == '2D':
 							convt = ConvTranspose2D(1, (hparams.freq_axis_kernel_size, s),
-								padding='same', strides=(1, s), NN_init=hparams.NN_init, NN_scaler=hparams.NN_scaler,
-								up_layers=len(hparams.upsample_scales), name='ConvTranspose2D_layer_{}'.format(i))
+													padding='same', strides=(1, s), NN_init=hparams.NN_init, NN_scaler=hparams.NN_scaler,
+													up_layers=len(hparams.upsample_scales), name='ConvTranspose2D_layer_{}'.format(i))
 
 						elif hparams.upsample_type == '1D':
 							convt = ConvTranspose1D(hparams.cin_channels, (s, ),
-								padding='same', strides=(s, ), NN_init=hparams.NN_init, NN_scaler=hparams.NN_scaler,
-								up_layers=len(hparams.upsample_scales), name='ConvTranspose1D_layer_{}'.format(i))
+													padding='same', strides=(s, ), NN_init=hparams.NN_init, NN_scaler=hparams.NN_scaler,
+													up_layers=len(hparams.upsample_scales), name='ConvTranspose1D_layer_{}'.format(i))
 
 						elif hparams.upsample_type == 'Resize':
 							convt = ResizeConvolution(1, (hparams.freq_axis_kernel_size, s),
-								padding='same', strides=(1, s), NN_init=hparams.NN_init, NN_scaler=hparams.NN_scaler,
-								up_layers=len(hparams.upsample_scales), name='ResizeConvolution_layer_{}'.format(i))
+													  padding='same', strides=(1, s), NN_init=hparams.NN_init, NN_scaler=hparams.NN_scaler,
+													  up_layers=len(hparams.upsample_scales), name='ResizeConvolution_layer_{}'.format(i))
 
 						else:
 							assert hparams.upsample_type == 'SubPixel'
 							convt = SubPixelConvolution(1, (hparams.freq_axis_kernel_size, 3),
-								padding='same', strides=(1, s), NN_init=hparams.NN_init, NN_scaler=hparams.NN_scaler,
-								up_layers=len(hparams.upsample_scales), name='SubPixelConvolution_layer_{}'.format(i))
+														padding='same', strides=(1, s), NN_init=hparams.NN_init, NN_scaler=hparams.NN_scaler,
+														up_layers=len(hparams.upsample_scales), name='SubPixelConvolution_layer_{}'.format(i))
 
-						self.upsample_conv.append(maybe_Normalize_weights(convt, 
-							hparams.wavenet_weight_normalization, init, hparams.wavenet_init_scale))
+						self.upsample_conv.append(maybe_Normalize_weights(convt,
+																		  hparams.wavenet_weight_normalization, init, hparams.wavenet_init_scale))
 
 						if hparams.upsample_activation == 'LeakyRelu':
 							self.upsample_conv.append(LeakyReluActivation(alpha=hparams.leaky_alpha,
-								name='upsample_leaky_relu_{}'.format(i+1)))
+																		  name='upsample_leaky_relu_{}'.format(i+1)))
 						elif hparams.upsample_activation == 'Relu':
 							self.upsample_conv.append(ReluActivation(name='upsample_relu_{}'.format(i+1)))
 						else:
@@ -205,7 +203,7 @@ class WaveNet():
 			self.all_convs += self.upsample_conv
 
 		self.receptive_field = receptive_field_size(hparams.layers,
-			hparams.stacks, hparams.kernel_size)
+													hparams.stacks, hparams.kernel_size)
 
 
 	def set_mode(self, is_training):
@@ -221,22 +219,24 @@ class WaveNet():
 		hparams = self._hparams
 		self.is_training = x is not None
 		self.is_evaluating = not self.is_training and y is not None
+		# when eval/test, only use single gpu.
+		self.num_gpus = hparams.wavenet_num_gpus if self.is_training else 1
 		#Set all convolutions to corresponding mode
 		self.set_mode(self.is_training)
 
-		split_device = '/cpu:0' if self._hparams.wavenet_num_gpus > 1 or self._hparams.split_on_cpu else '/gpu:0'
+		split_device = '/cpu:0' if self.num_gpus > 1 or self._hparams.split_on_cpu else '/gpu:0'
 		with tf.device(split_device):
 			hp = self._hparams
-			lout_int = [tf.int32] * hp.wavenet_num_gpus
-			lout_float = [tf.float32] * hp.wavenet_num_gpus
+			lout_int = [tf.int32] * self.num_gpus
+			lout_float = [tf.float32] * self.num_gpus
 
-			tower_input_lengths = tf.split(input_lengths, num_or_size_splits=hp.wavenet_num_gpus, axis=0) if input_lengths is not None else [input_lengths] * hp.wavenet_num_gpus
+			tower_input_lengths = tf.split(input_lengths, num_or_size_splits=self.num_gpus, axis=0) if input_lengths is not None else [input_lengths] * self.num_gpus
 
-			tower_y = tf.split(y, num_or_size_splits=hp.wavenet_num_gpus, axis=0) if y is not None else [y] * hp.wavenet_num_gpus
-			tower_x = tf.split(x, num_or_size_splits=hp.wavenet_num_gpus, axis=0) if x is not None else [x] * hp.wavenet_num_gpus
-			tower_c = tf.split(c, num_or_size_splits=hp.wavenet_num_gpus, axis=0) if self.local_conditioning_enabled() else [None] * hp.wavenet_num_gpus
-			tower_g = tf.split(g, num_or_size_splits=hp.wavenet_num_gpus, axis=0) if self.global_conditioning_enabled() else [None] * hp.wavenet_num_gpus
-			tower_test_inputs = tf.split(test_inputs, num_or_size_splits=hp.wavenet_num_gpus, axis=0) if test_inputs is not None else [test_inputs] * hp.wavenet_num_gpus
+			tower_y = tf.split(y, num_or_size_splits=self.num_gpus, axis=0) if y is not None else [y] * self.num_gpus
+			tower_x = tf.split(x, num_or_size_splits=self.num_gpus, axis=0) if x is not None else [x] * self.num_gpus
+			tower_c = tf.split(c, num_or_size_splits=self.num_gpus, axis=0) if self.local_conditioning_enabled() else [None] * self.num_gpus
+			tower_g = tf.split(g, num_or_size_splits=self.num_gpus, axis=0) if self.global_conditioning_enabled() else [None] * self.num_gpus
+			tower_test_inputs = tf.split(test_inputs, num_or_size_splits=self.num_gpus, axis=0) if test_inputs is not None else [test_inputs] * self.num_gpus
 
 		self.tower_y_hat_q = []
 		self.tower_y_hat_train = []
@@ -263,8 +263,8 @@ class WaveNet():
 		log('  Synthesis mode:            {}'.format(not (self.is_training or self.is_evaluating)))
 
 		#1. Declare GPU devices
-		gpus = ['/gpu:{}'.format(i) for i in range(hp.wavenet_num_gpus)]
-		for i in range(hp.wavenet_num_gpus):
+		gpus = ['/gpu:{}'.format(i) for i in range(self.num_gpus)]
+		for i in range(self.num_gpus):
 			with tf.device(tf.train.replica_device_setter(ps_tasks=1, ps_device='/cpu:0', worker_device=gpus[i])):
 				with tf.variable_scope('inference') as scope:
 					log('  device:                    {}'.format(i))
@@ -293,15 +293,15 @@ class WaveNet():
 
 						#Graph extension for log saving
 						#[batch_size, time_length]
-						shape_control = (batch_size, tf.shape(tower_x[i])[-1], 1)
+						shape_control = (batch_size // self.num_gpus, tf.shape(tower_x[i])[-1], 1)
 						with tf.control_dependencies([tf.assert_equal(tf.shape(tower_y[i]), shape_control)]):
 							y_log = tf.squeeze(tower_y[i], [-1])
 							if is_mulaw_quantize(hparams.input_type):
 								self.tower_y[i] = y_log
 
 						y_hat_log = tf.cond(tf.equal(tf.rank(y_hat_train), 4),
-							lambda: tf.squeeze(y_hat_train, [-1]),
-							lambda: y_hat_train)
+											lambda: tf.squeeze(y_hat_train, [-1]),
+											lambda: y_hat_train)
 						y_hat_log = tf.reshape(y_hat_log, [batch_size, hparams.out_channels, -1])
 
 						if is_mulaw_quantize(hparams.input_type):
@@ -373,7 +373,7 @@ class WaveNet():
 
 						#Fast eval
 						y_hat = self.incremental(initial_input, c=tower_c[i], g=tower_g[i], time_length=length, test_inputs=test_inputs,
-							softmax=False, quantize=True, log_scale_min=hparams.log_scale_min, log_scale_min_gauss=hparams.log_scale_min_gauss)
+												 softmax=False, quantize=True, log_scale_min=hparams.log_scale_min, log_scale_min_gauss=hparams.log_scale_min_gauss)
 
 						#Save targets and length for eval loss computation
 						if is_mulaw_quantize(hparams.input_type):
@@ -412,7 +412,7 @@ class WaveNet():
 						else:
 							#[batch_size, local_condition_time, local_condition_dimension(num_mels)]
 							message = ('Expected 3 dimension shape [batch_size(1), time_length, {}] for local condition features but found {}'.format(
-									hparams.cin_channels, tower_c[i].shape))
+								hparams.cin_channels, tower_c[i].shape))
 							with tf.control_dependencies([tf.assert_equal(tf.rank(tower_c[i]), 3, message=message)]):
 								tower_c[i] = tf.identity(tower_c[i], name='synthesis_assert_c_rank_op')
 
@@ -445,7 +445,7 @@ class WaveNet():
 							initial_input = tf.ones([batch_size, 1, 1], tf.float32) * initial_value
 
 						y_hat = self.incremental(initial_input, c=tower_c[i], g=tower_g[i], time_length=synthesis_length, test_inputs=tower_test_inputs[i],
-							softmax=False, quantize=True, log_scale_min=hparams.log_scale_min, log_scale_min_gauss=hparams.log_scale_min_gauss)
+												 softmax=False, quantize=True, log_scale_min=hparams.log_scale_min, log_scale_min_gauss=hparams.log_scale_min_gauss)
 
 						if is_mulaw_quantize(hparams.input_type):
 							y_hat = tf.reshape(tf.argmax(y_hat, axis=1), [batch_size, -1])
@@ -478,9 +478,9 @@ class WaveNet():
 		'''
 		self.tower_loss = []
 		total_loss = 0
-		gpus = ['/gpu:{}'.format(i) for i in range(self._hparams.wavenet_num_gpus)]
+		gpus = ['/gpu:{}'.format(i) for i in range(self.num_gpus)]
 
-		for i in range(self._hparams.wavenet_num_gpus):
+		for i in range(self.num_gpus):
 			with tf.device(tf.train.replica_device_setter(ps_tasks=1, ps_device='/cpu:0', worker_device=gpus[i])):
 				with tf.variable_scope('loss') as scope:
 					if self.is_training:
@@ -488,22 +488,22 @@ class WaveNet():
 							tower_loss = MaskedCrossEntropyLoss(self.tower_y_hat_q[i][:, :-1, :], self.tower_y[i][:, 1:], mask=self.tower_mask[i])
 						else:
 							if self._hparams.out_channels == 2:
-								tower_loss = GaussianMaximumLikelihoodEstimation(self.tower_y_hat_train[i][:, :, :-1], self.tower_y[i][:, 1:, :], 
-									hparams=self._hparams, mask=self.tower_mask[i])
+								tower_loss = GaussianMaximumLikelihoodEstimation(self.tower_y_hat_train[i][:, :, :-1], self.tower_y[i][:, 1:, :],
+																				 hparams=self._hparams, mask=self.tower_mask[i])
 							else:
-								tower_loss = DiscretizedMixtureLogisticLoss(self.tower_y_hat_train[i][:, :, :-1], self.tower_y[i][:, 1:, :], 
-									hparams=self._hparams, mask=self.tower_mask[i])
-								
+								tower_loss = DiscretizedMixtureLogisticLoss(self.tower_y_hat_train[i][:, :, :-1], self.tower_y[i][:, 1:, :],
+																			hparams=self._hparams, mask=self.tower_mask[i])
+
 					elif self.is_evaluating:
 						if is_mulaw_quantize(self._hparams.input_type):
 							tower_loss = MaskedCrossEntropyLoss(self.tower_y_hat_eval[i], self.tower_y_eval[i], lengths=[self.tower_eval_length[i]])
 						else:
 							if self._hparams.out_channels == 2:
-								tower_loss = GaussianMaximumLikelihoodEstimation(self.tower_y_hat_eval[i], self.tower_y_eval[i], 
-									hparams=self._hparams, lengths=[self.tower_eval_length[i]])
+								tower_loss = GaussianMaximumLikelihoodEstimation(self.tower_y_hat_eval[i], self.tower_y_eval[i],
+																				 hparams=self._hparams, lengths=[self.tower_eval_length[i]])
 							else:
-								tower_loss = DiscretizedMixtureLogisticLoss(self.tower_y_hat_eval[i], self.tower_y_eval[i], 
-									hparams=self._hparams, lengths=[self.tower_eval_length[i]])
+								tower_loss = DiscretizedMixtureLogisticLoss(self.tower_y_hat_eval[i], self.tower_y_eval[i],
+																			hparams=self._hparams, lengths=[self.tower_eval_length[i]])
 
 					else:
 						raise RuntimeError('Model not in train/eval mode but computing loss: Where did this go wrong?')
@@ -513,11 +513,10 @@ class WaveNet():
 			total_loss += tower_loss
 
 		if self.is_training:
-			self.loss = total_loss / self._hparams.wavenet_num_gpus
+			self.loss = total_loss / self.num_gpus
 
 		else:
-			self.eval_loss = total_loss / self._hparams.wavenet_num_gpus
-
+			self.eval_loss = total_loss / self.num_gpus
 
 	def add_optimizer(self, global_step):
 		'''Adds optimizer to the graph. Supposes that initialize function has already been called.
@@ -526,7 +525,7 @@ class WaveNet():
 		tower_gradients = []
 
 		# 1. Declare GPU devices
-		gpus = ['/gpu:{}'.format(i) for i in range(hp.wavenet_num_gpus)]
+		gpus = ['/gpu:{}'.format(i) for i in range(self.num_gpus)]
 
 		grad_device = '/cpu:0' if hp.tacotron_num_gpus > 1 else gpus[0]
 
@@ -534,23 +533,23 @@ class WaveNet():
 			with tf.variable_scope('optimizer'):
 				#Create lr schedule
 				if hp.wavenet_lr_schedule == 'noam':
-					learning_rate = self._noam_learning_rate_decay(hp.wavenet_learning_rate, 
-						global_step,
-						warmup_steps=hp.wavenet_warmup)
+					learning_rate = self._noam_learning_rate_decay(hp.wavenet_learning_rate,
+																   global_step,
+																   warmup_steps=hp.wavenet_warmup)
 				else:
 					assert hp.wavenet_lr_schedule == 'exponential'
 					learning_rate = self._exponential_learning_rate_decay(hp.wavenet_learning_rate,
-						global_step,
-						hp.wavenet_decay_rate,
-						hp.wavenet_decay_steps)
+																		  global_step,
+																		  hp.wavenet_decay_rate,
+																		  hp.wavenet_decay_steps)
 
 				#Adam optimization
 				self.learning_rate = learning_rate
 				optimizer = tf.train.AdamOptimizer(learning_rate, hp.wavenet_adam_beta1,
-					hp.wavenet_adam_beta2, hp.wavenet_adam_epsilon)
+												   hp.wavenet_adam_beta2, hp.wavenet_adam_epsilon)
 
 		# 2. Compute Gradient
-		for i in range(hp.wavenet_num_gpus):
+		for i in range(self.num_gpus):
 			#Device placemenet
 			with tf.device(tf.train.replica_device_setter(ps_tasks=1, ps_device='/cpu:0', worker_device=gpus[i])):
 				with tf.variable_scope('optimizer') as scope:
@@ -600,7 +599,7 @@ class WaveNet():
 
 			with tf.control_dependencies(tf.get_collection(tf.GraphKeys.UPDATE_OPS)):
 				adam_optimize = optimizer.apply_gradients(zip(clipped_grads, variables),
-					global_step=global_step)
+														  global_step=global_step)
 
 			#Add exponential moving average
 			#https://www.tensorflow.org/api_docs/python/tf/train/ExponentialMovingAverage
@@ -618,14 +617,14 @@ class WaveNet():
 		return tf.maximum(init_lr * warmup_steps**0.5 * tf.minimum(step * warmup_steps**-1.5, step**-0.5), 1e-4)
 
 	def _exponential_learning_rate_decay(self, init_lr, global_step,
-							 decay_rate=0.5,
-							 decay_steps=300000):
+										 decay_rate=0.5,
+										 decay_steps=300000):
 		#Compute natural exponential decay
 		lr = tf.train.exponential_decay(init_lr,
-			global_step,
-			decay_steps,
-			decay_rate,
-			name='wavenet_lr_exponential_decay')
+										global_step,
+										decay_steps,
+										decay_rate,
+										name='wavenet_lr_exponential_decay')
 		return lr
 
 
@@ -649,7 +648,6 @@ class WaveNet():
 
 	def step(self, x, c=None, g=None, softmax=False):
 		"""Forward step
-
 		Args:
 			x: Tensor of shape [batch_size, channels, time_length], One-hot encoded audio signal.
 			c: Tensor of shape [batch_size, cin_channels, time_length], Local conditioning features.
@@ -658,7 +656,6 @@ class WaveNet():
 				Note: set hparams.use_speaker_embedding to False to disable embedding layer and
 				use extrnal One-hot encoded features.
 			softmax: Boolean, Whether to apply softmax.
-
 		Returns:
 			a Tensor of shape [batch_size, out_channels, time_length]
 		"""
@@ -722,13 +719,11 @@ class WaveNet():
 
 
 	def incremental(self, initial_input, c=None, g=None,
-		time_length=100, test_inputs=None,
-		softmax=True, quantize=True, log_scale_min=-7.0, log_scale_min_gauss=-7.0):
+					time_length=100, test_inputs=None,
+					softmax=True, quantize=True, log_scale_min=-7.0, log_scale_min_gauss=-7.0):
 		"""Inceremental forward step
-
 		Inputs of shape [batch_size, channels, time_length] are reshaped to [batch_size, time_length, channels]
 		Input of each time step is of shape [batch_size, 1, channels]
-
 		Args:
 			Initial input: Tensor of shape [batch_size, channels, 1], initial recurrence input.
 			c: Tensor of shape [batch_size, cin_channels, time_length], Local conditioning features
@@ -740,7 +735,6 @@ class WaveNet():
 			quantize: Whether to quantize softmax output before feeding to
 				next time step input
 			log_scale_min: float, log scale minimum value.
-
 		Returns:
 			Tensor of shape [batch_size, channels, time_length] or [batch_size, channels, 1]
 				Generated one_hot encoded samples
@@ -813,7 +807,7 @@ class WaveNet():
 		initial_loss_outputs_ta = tf.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
 		#Only use convolutions queues for Residual Blocks main convolutions (only ones with kernel size 3 and dilations, all others are 1x1)
 		initial_queues = [tf.zeros((batch_size, res_conv.layer.kw + (res_conv.layer.kw - 1) * (res_conv.layer.dilation_rate[0] - 1), self._hparams.residual_channels),
-			name='convolution_queue_{}'.format(i+1)) for i, res_conv in enumerate(self.residual_layers)]
+								   name='convolution_queue_{}'.format(i+1)) for i, res_conv in enumerate(self.residual_layers)]
 
 		def condition(time, unused_outputs_ta, unused_current_input, unused_loss_outputs_ta, unused_queues):
 			return tf.less(time, time_length)
@@ -829,7 +823,7 @@ class WaveNet():
 			new_queues = []
 			for conv, queue in zip(self.residual_layers, queues):
 				x, h, new_queue = conv.incremental_step(x, c=ct, g=gt, queue=queue)
-				
+
 				if self._hparams.legacy:
 					skips = h if skips is None else (skips + h) * np.sqrt(0.5)
 				else:
@@ -877,9 +871,7 @@ class WaveNet():
 			if test_inputs is not None:
 				next_input = tf.expand_dims(test_inputs[:, time, :], axis=1)
 
-			time = tf.print(time + 1, [time+1, time_length])
-			#Print (from tensorflow.python.ops.logging_ops) is deprecated and will be removed after 2018-08-20.
-			# time = tf.Print(time + 1, [time+1, time_length])
+			time = tf.Print(time + 1, [time+1, time_length])
 			#output = x (maybe next input)
 			# if test_inputs is not None:
 			# 	#override next_input with ground truth
@@ -921,5 +913,3 @@ class WaveNet():
 				f.clear_queue()
 			except AttributeError:
 				pass
-
-
