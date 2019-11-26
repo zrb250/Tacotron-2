@@ -74,7 +74,8 @@ def _process_utterance(mel_dir, linear_dir, wav_dir, index, wav_path, text, hpar
 		wav = audio.trim_silence(wav, hparams)
 
 	#Pre-emphasize
-	preem_wav = audio.preemphasis(wav, hparams.preemphasis, hparams.preemphasize)
+	#preem_wav = audio.preemphasis(wav, hparams.preemphasis, hparams.preemphasize)
+	preem_wav = wav 
 
 	#rescale wav
 	if hparams.rescale:
@@ -116,13 +117,14 @@ def _process_utterance(mel_dir, linear_dir, wav_dir, index, wav_path, text, hpar
 	# Compute the mel scale spectrogram from the wav
 	mel_spectrogram = audio.melspectrogram(preem_wav, hparams).astype(np.float32)
 	mel_frames = mel_spectrogram.shape[1]
-
+	audio_filename = 'audio-{}.npy'.format(index)
 	if mel_frames > hparams.max_mel_frames and hparams.clip_mels_length:
 		return None
 
 	#Compute the linear scale spectrogram from the wav
 	linear_spectrogram = audio.linearspectrogram(preem_wav, hparams).astype(np.float32)
 	linear_frames = linear_spectrogram.shape[1]
+	#print('linear_frames length {} '.format(linear_frames))
 
 	#sanity check
 	assert linear_frames == mel_frames
